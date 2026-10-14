@@ -188,8 +188,14 @@ def render_day(day):
     if not day["courses"]:
         return ""
     target = date.fromisoformat(day["date"])
-    lines = [f"今日课表 · {day['date']} {DAY_NAMES[target.weekday()]} · 第{day['week']}周"]
-    lines.extend(f"{c['start']}–{c['end']}  {c['name']}｜{c['location'] or '地点待定'}" for c in day["courses"])
+    lines = ["今日课表", f"{target.month}月{target.day}日 {DAY_NAMES[target.weekday()]} · 第{day['week']}周"]
+    for index, course in enumerate(day["courses"], 1):
+        lines.extend([
+            "",
+            f"{index}. {course['name']}",
+            f"   时间：{course['start']}–{course['end']}",
+            f"   地点：{course['location'] or '地点待定'}",
+        ])
     return "\n".join(lines)
 
 
