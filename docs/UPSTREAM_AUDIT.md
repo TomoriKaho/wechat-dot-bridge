@@ -44,6 +44,29 @@ DNS、连接、TLS、写入、已知拒绝和取消仍失败，cursor 不推进�
 
 ## 基础设施与维护边界
 
+### 本人课表提醒的限定扩展
+
+用户授权仅本人每天首课前 15 分钟的一份课表主动发送。参考上述固定版本 cc-connect
+`platform/weixin/weixin.go` 的 `Send`、`ReconstructReplyCtx`，以及
+`weixin_test.go` 的 `TestContextToken_PersistAndReload`、
+`TestReconstructReplyCtx_MissingToken` 和 push / reply 限流测试：采用已有持久化本人
+context，共用串行 sender，错误按固定类别处理，不把主动推送伪装为新来信。
+cc-connect 的 cron 会进入 Engine / Session；本项目只生成固定课表文字，不能直接
+引入其执行器。也不采用其发送重试策略：错过提醒即跳过，uncertain 保留人工核对。
+
+课表来源是本机 `gdufe-campus-agent` 的既有 `/api/jwxt/data?type=schedule&refresh=true`
+返回，参考 commit `8ff2c0feccb9cbb6df66a0cc874f5ed14d36f023` 的
+`packages/client-core/src/schedule-config.ts`、`schedule-periods.ts` 和对应测试。
+沿用广州作息、实际 section 优先、单节 / 连堂 / 离散节次及行标题回退规则。
+Python 桥接不能直接加载其 TypeScript 模块；教务 Python 客户端则依赖校园项目的登录
+会话、缓存和服务配置，并返回额外原始 HTML。因此仅适配已解析 weekly JSON 和纯节次
+规则，不复制登录、验证码、抓取或缓存基础设施，不修改校园项目。
+
+调度复用已有 AnyIO 任务组，持久化复用 SQLite 原子迁移和事务，网络复用现有
+WeixinWorker。新增表只表达课表快照及本人每日发送状态，不引入新框架、外部队列或
+独立发送进程。数据库版本 9 向前迁移；回退旧程序前使用既有私人备份恢复流程。
+本地回归验证这些适配；实际手机端主动收信仍需按 [课表提醒](SCHEDULE.md)验收。
+
 官方 MCP SDK、AnyIO、HTTPCore、jsonschema、Standard Webhooks、SQLite 和 systemd
 分别承担协议、并发、网络、参数校验、签名、存储和服务管理。选型及自研例外见
 [贡献指南](../CONTRIBUTING.md#技术栈与复用原则)，依赖由 `uv.lock` 固定。

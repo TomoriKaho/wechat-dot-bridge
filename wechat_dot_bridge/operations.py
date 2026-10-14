@@ -15,7 +15,14 @@ def subscriptions(store):
 
 def queue(store):
     with store.lock:
-        return [dict(r) for r in store.db.execute("SELECT client_id AS reply_id,message_id,status,error,created_at FROM replies WHERE status NOT IN ('accepted') ORDER BY rowid DESC LIMIT 100")]
+        replies = [dict(r) for r in store.db.execute("SELECT client_id AS reply_id,message_id,status,error,created_at FROM replies WHERE status NOT IN ('accepted') ORDER BY rowid DESC LIMIT 100")]
+        binding = store.get_binding()
+        if binding:
+            replies.extend(dict(r) for r in store.db.execute("""SELECT client_id AS reply_id,
+                NULL AS message_id,status,error,created_at FROM course_reminders
+                WHERE account=? AND peer=? AND status NOT IN ('accepted','skipped')
+                ORDER BY created_at DESC LIMIT 100""", (binding['id'],binding['owner'])))
+        return sorted(replies, key=lambda r: r['created_at'], reverse=True)[:100]
 
 
 def diagnostics(store, threshold=300):
@@ -38,6 +45,13 @@ def diagnostics(store, threshold=300):
             issues.append(dict(message_id=row['message_id'],code='reply_'+row['status'],error=row['error']))
         if binding and binding['last_error']:
             issues.append(dict(code='channel_error',error=binding['last_error']))
+        for row in store.db.execute("""SELECT client_id,status,error FROM course_reminders
+            WHERE account=? AND peer=? AND status IN ('failed','uncertain','context_required','auth_required')
+            ORDER BY created_at DESC LIMIT 50""", scope):
+            issues.append(dict(reply_id=row['client_id'],code='schedule_'+row['status'],error=row['error']))
+        schedule_error = store.db.execute("SELECT last_error FROM course_schedule WHERE account=? AND peer=?", scope).fetchone()
+        if schedule_error and schedule_error[0]:
+            issues.append(dict(code='schedule_failed'))
         if binding and not any(s['status']=='active' and (s['refresh_before'] is None or s['refresh_before']>now) for s in subscriptions(store)):
             issues.append(dict(code='subscription_inactive'))
         from .maintenance import storage_status

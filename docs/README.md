@@ -8,6 +8,7 @@
 | 排查、升级、备份与延迟 | [运维](OPERATIONS.md) |
 | 私有部署和数据边界 | [安全边界](SECURITY.md) |
 | 验证自己的微信部署 | [验收清单](ACCEPTANCE.md) |
+| 导入课表与每日提醒 | [课表提醒](SCHEDULE.md) |
 | 参考了哪些成熟设计 | [上游对照](UPSTREAM_AUDIT.md) |
 | 贡献代码与运行检查 | [贡献指南](../CONTRIBUTING.md) |
 | 准备公开仓库与发行 | [开源发布](RELEASING.md) |

@@ -20,6 +20,7 @@ MCP 经官方 Secure MCP Tunnel 访问，本项目不运行公开 HTTP MCP 监�
 | Tunnel 运行密钥 | 操作者选定的私人文件，由官方 Tunnel client 读取 |
 | 待确认二维码 | 私人登录状态文件；确认或过期后清除状态文件中的二维码内容；可选本地 PNG 仍需操作者保管 |
 | 手机验证码 | 隐藏交互输入，不持久保存 |
+| 学期课表与提醒记录 | 私人 SQLite；仅保留课程、地点、时间与周次，不保留教务凭据、原始 HTML 或学生身份；本地 `schedule preview` 可核对课表正文 |
 
 启用 `callback_proxy` 后，本机 HTTP 代理转发 Events 的端到端 HTTPS 连接，可以观察目标公网 IP、TLS 主机名等连接元数据，桥接不会向它发送明文 callback 路径、签名 secret 或事件 body。启用 `callback_dns: "google"` 后，Google Public DNS 仅收到回调 hostname 的 DNS 查询，不收到 callback URL / path、secret、消息 ID 或消息正文。微信绑定凭据不会进入 Events 请求；微信收发的网络路径不受这两个配置项影响。
 

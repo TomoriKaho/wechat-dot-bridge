@@ -10,6 +10,7 @@
 - 收取和回传图片、文件、视频，读取文本附件，处理引用内容。
 - 接收微信语音及平台提供的转写；其他音频转换需要可选编解码器。
 - 保存待处理消息和发送状态，提供输入提示、备份与故障恢复。
+- 本人课表提醒：导入一份学期课表，每天首课前 15 分钟发送当天课程；无课或错过时间跳过。
 
 当前是 **0.1.0 实验性版本**，面向 Linux / systemd 和本人单账号私聊。具体能力和微信端确认情况见 [能力说明](docs/CAPABILITIES.md)。
 
@@ -31,6 +32,7 @@ uv sync --locked --all-extras
 
 - [安装](docs/INSTALL.md) · [连接 dot 与工具清单](docs/DOT_SETUP.md)
 - [排查、升级和备份](docs/OPERATIONS.md) · [微信端验收](docs/ACCEPTANCE.md)
+- [本人课表提醒](docs/SCHEDULE.md)
 - [贡献指南](CONTRIBUTING.md) · [变更记录](CHANGELOG.md) · [安全报告](SECURITY.md)
 
 ## 实现与致谢

@@ -18,6 +18,7 @@ from urllib.parse import urlsplit
 from .errors import BridgeError
 from .migrations import migrate
 from .lifecycle import WorkStore
+from .schedule import ScheduleStore
 from .private_paths import _private_database_file, _private_directory
 
 
@@ -41,6 +42,9 @@ SAFE_ERRORS = frozenset({
     "operation_failed", "account_disabled", "context_expired", "retry_limit",
     "endpoint_rejected", "dns_rejected", "response_invalid", "binding_invalid",
     "binding_ambiguous", "import_failed", "gateway_error", "invalid_reply",
+    "schedule_missed", "schedule_expired", "schedule_paused", "schedule_replaced",
+    "schedule_not_delivered",
+    "schedule_failed",
 })
 
 
@@ -80,7 +84,7 @@ from .attachment_store import AttachmentStore, MEDIA_ERRORS
 SAFE_ERRORS = SAFE_ERRORS | MEDIA_ERRORS
 
 
-class Store(AttachmentStore, WorkStore):
+class Store(AttachmentStore, WorkStore, ScheduleStore):
     def __init__(self, state_dir, clock=time.time):
         self.directory = _private_directory(state_dir)
         self.state_dir = self.directory
@@ -525,6 +529,9 @@ class Store(AttachmentStore, WorkStore):
             binding = self.db.execute("SELECT * FROM binding LIMIT 1").fetchone()
             if not binding or not binding["enabled"] or binding["status"] != "ready":
                 return None
+            scheduled = self._claim_schedule_send(binding)
+            if scheduled is not None:
+                return scheduled
             row = self.db.execute(
                 "SELECT r.*,m.peer FROM replies r JOIN messages m ON m.id=r.message_id "
                 "WHERE r.status='queued' AND m.account=? AND m.peer=? "
@@ -557,6 +564,8 @@ class Store(AttachmentStore, WorkStore):
         if not isinstance(status, str) or status not in SEND_OUTCOMES:
             raise BridgeError("invalid_send_outcome")
         diagnostic = None if error is None else _safe_error(error)
+        if message_id is None:
+            return self._finish_schedule_send(reply_id, status, diagnostic)
         with self._transaction():
             binding = self._binding()
             self._message(message_id, binding)
@@ -599,6 +608,7 @@ class Store(AttachmentStore, WorkStore):
         with self._transaction():
             binding = self.db.execute("SELECT id,owner FROM binding LIMIT 1").fetchone()
             if binding:
+                self.recover_schedule_sends(binding)
                 self.db.execute(
                     "UPDATE replies SET status='uncertain',error='restart_during_send' WHERE status='sending' "
                     "AND message_id IN (SELECT id FROM messages WHERE account=? AND peer=?)",
@@ -607,6 +617,8 @@ class Store(AttachmentStore, WorkStore):
     def resolve_uncertain(self, reply_id, delivered):
         if type(delivered) is not bool:
             raise BridgeError("invalid_resolution")
+        if isinstance(reply_id, str) and reply_id.startswith("schedule_"):
+            return self.resolve_schedule_uncertain(reply_id, delivered)
         with self._transaction():
             binding=self._binding()
             row=self.db.execute("SELECT r.* FROM replies r JOIN messages m ON m.id=r.message_id WHERE r.client_id=? AND m.account=? AND m.peer=?", (reply_id,binding["id"],binding["owner"])).fetchone()
@@ -626,6 +638,9 @@ class Store(AttachmentStore, WorkStore):
     def retry_reply(self, reply_id):
         with self._transaction():
             binding = self._binding()
+            if isinstance(reply_id, str) and reply_id.startswith("schedule_"):
+                row = self._schedule_send_row(binding, reply_id)
+                raise BridgeError("delivery_uncertain_review_required" if row["status"] == "uncertain" else "schedule_retry_disabled")
             row = self.db.execute("SELECT r.* FROM replies r JOIN messages m ON m.id=r.message_id WHERE r.client_id=? AND m.account=? AND m.peer=?", (reply_id,binding["id"],binding["owner"])).fetchone()
             if not row:
                 raise BridgeError("unknown_reply")

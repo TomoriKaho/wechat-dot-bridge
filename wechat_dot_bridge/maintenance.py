@@ -60,7 +60,8 @@ def storage_status(store):
         page_count = store.db.execute("PRAGMA page_count").fetchone()[0]
         free_pages = store.db.execute("PRAGMA freelist_count").fetchone()[0]
         tables = ("messages", "replies", "attachments", "retired_messages",
-                  "message_timeline", "deliveries", "completed_uploads")
+                  "message_timeline", "deliveries", "completed_uploads",
+                  "course_schedule", "course_reminders", "course_reminder_parts")
         rows = {name: store.db.execute("SELECT count(*) FROM " + name).fetchone()[0]
                 for name in tables if _table(store, name)}
         attachment_bytes = store.db.execute(

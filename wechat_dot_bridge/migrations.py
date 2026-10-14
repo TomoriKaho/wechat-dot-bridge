@@ -204,8 +204,26 @@ def _events(db, clock):
     db.execute("CREATE TABLE IF NOT EXISTS event_metadata (key TEXT PRIMARY KEY,value TEXT)")
 
 
+def _course_schedule(db, clock):
+    db.execute("""CREATE TABLE IF NOT EXISTS course_schedule (
+        account TEXT NOT NULL, peer TEXT NOT NULL, week1_monday TEXT NOT NULL,
+        data TEXT NOT NULL, enabled INTEGER NOT NULL CHECK(enabled IN (0,1)),
+        updated_at REAL NOT NULL, last_error TEXT, PRIMARY KEY(account,peer))""")
+    db.execute("""CREATE TABLE IF NOT EXISTS course_reminders (
+        client_id TEXT PRIMARY KEY, account TEXT NOT NULL, peer TEXT NOT NULL,
+        date TEXT NOT NULL, due_at REAL NOT NULL, expires_at REAL NOT NULL,
+        status TEXT NOT NULL, error TEXT, created_at REAL NOT NULL,
+        UNIQUE(account,peer,date))""")
+    db.execute("""CREATE TABLE IF NOT EXISTS course_reminder_parts (
+        reply_id TEXT NOT NULL REFERENCES course_reminders(client_id),
+        part INTEGER NOT NULL, text TEXT NOT NULL,
+        accepted INTEGER NOT NULL DEFAULT 0 CHECK(accepted IN (0,1)),
+        PRIMARY KEY(reply_id,part))""")
+    db.execute("CREATE INDEX IF NOT EXISTS course_reminder_dispatch ON course_reminders(status,due_at)")
+
+
 MIGRATIONS = (_core, _inbound_quotes, _media, _outbound, _timing, _retired_messages,
-              _processing_lifecycle, _events)
+              _processing_lifecycle, _events, _course_schedule)
 SCHEMA_VERSION = len(MIGRATIONS)
 
 

@@ -111,8 +111,10 @@ async def _run_runtime(store, server, weixin, events, media, monitor, typing):
     from .net_transport import cancel_all, reset_cancellation
     from .sdk_adapter import run_stdio
     from .maintenance import maintain
+    from .schedule import ScheduleWorker
 
     reset_cancellation()
+    scheduler = ScheduleWorker(store)
     wakes = {name: anyio.Event() for name in ("send", "event", "media", "typing")}
 
     def notify(*names):
@@ -194,6 +196,20 @@ async def _run_runtime(store, server, weixin, events, media, monitor, typing):
         typing.prewarm()
         typing.tick()
 
+    async def course_schedule():
+        while True:
+            try:
+                if await anyio.to_thread.run_sync(scheduler.tick):
+                    notify("send")
+                delay = await anyio.to_thread.run_sync(scheduler.delay)
+            except Exception:
+                delay = 30
+                try:
+                    await anyio.to_thread.run_sync(store.record_schedule_error)
+                except Exception:
+                    pass
+            await anyio.sleep(delay)
+
     try:
         async with anyio.create_task_group() as tasks:
             async def signals():
@@ -205,6 +221,7 @@ async def _run_runtime(store, server, weixin, events, media, monitor, typing):
                         break
 
             tasks.start_soon(signals)
+            tasks.start_soon(course_schedule)
             for name, function in (("poll", weixin.poll_once), ("send", weixin.send_once),
                                    ("event", events.deliver_once), ("media", media.tick),
                                    ("monitor", monitor.tick), ("typing", presence)):
@@ -266,6 +283,16 @@ def parser():
     commands.add_parser("subscriptions", help="List subscription IDs and lifetime, without callback credentials")
     commands.add_parser("queue", help="List unresolved reply IDs and fixed error categories")
     commands.add_parser("storage", help="Read storage sizes, row counts and fixed capacity warnings")
+    schedule = commands.add_parser("schedule", help="Manage owner-only offline course reminders")
+    schedule_commands = schedule.add_subparsers(dest="schedule_command", required=True)
+    schedule_import = schedule_commands.add_parser("import", help="Import a private campus schedule JSON; stop service first")
+    schedule_import.add_argument("file")
+    schedule_import.add_argument("--week1-monday", required=True)
+    schedule_commands.add_parser("pause", help="Pause only course reminders; stop service first")
+    schedule_commands.add_parser("resume", help="Resume only course reminders; stop service first")
+    schedule_commands.add_parser("status", help="Show redacted reminder status")
+    preview = schedule_commands.add_parser("preview", help="Preview one day's course reminder locally")
+    preview.add_argument("--date", required=True)
     cleanup = commands.add_parser("cleanup-history", help="Preview completed history retirement; stop service first")
     cleanup.add_argument("--days", type=int)
     cleanup.add_argument("--apply", action="store_true", help="Retire eligible completed history, preserving unresolved work and deduplication")
@@ -310,6 +337,25 @@ def main(argv=None):
             from .operations import restore
             with acquire_lock(state / "worker.lock"):
                 print(canonical(restore(args.source,state)))
+        elif args.command == "schedule":
+            from .schedule import load_schedule_file
+
+            def schedule_result():
+                if args.schedule_command == "import":
+                    return store.import_schedule(load_schedule_file(args.file), args.week1_monday)
+                if args.schedule_command in ("pause", "resume"):
+                    return store.set_schedule_enabled(args.schedule_command == "resume")
+                if args.schedule_command == "preview":
+                    return store.schedule_preview(args.date)
+                return store.schedule_status()
+
+            if args.schedule_command in ("import", "pause", "resume"):
+                with acquire_lock(state / "worker.lock"):
+                    store = Store(state)
+                    print(canonical(schedule_result()))
+            else:
+                store = Store(state)
+                print(canonical(schedule_result()))
         elif args.command in ("login-start", "login-poll"):
             from .login import start_login, poll_login
             with acquire_lock(state / "worker.lock"):
