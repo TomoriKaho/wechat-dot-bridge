@@ -127,6 +127,27 @@ class SharedDNSTransportTests(unittest.TestCase):
             factory.assert_called_once()
             dns.assert_not_called()
 
+    def test_many_public_doh_records_produce_bounded_connection_candidates(self):
+        records = [{'type': 5, 'data': 'alias.example.net.'}] + [
+            {'type': 1, 'data': f'8.8.4.{index}'} for index in range(1, 33)]
+        with self.network([self.response(200, self.answer(records))]) as (_, _, names, factory, dns):
+            selected = net.resolve_addresses('cdn.example.com', dns='google', proxy=self.PROXY)
+        self.assertEqual(len(selected), net.MAX_CONNECTION_CANDIDATES)
+        self.assertEqual([row[3][0] for row in selected], [f'8.8.4.{index}' for index in range(1, 17)])
+        self.assertEqual(names, ['dns.google'])
+        factory.assert_called_once()
+        dns.assert_not_called()
+
+    def test_private_doh_record_after_candidate_limit_still_blocks_application(self):
+        records = [{'type': 1, 'data': f'8.8.4.{index}'} for index in range(1, 19)]
+        records.append({'type': 1, 'data': '127.0.0.1'})
+        with self.network([self.response(200, self.answer(records))]) as (_, _, names, factory, dns):
+            with self.assertRaisesRegex(BridgeError, '^media_network_failed$'):
+                self.invoke('media')
+        self.assertEqual(names, ['dns.google'])
+        factory.assert_called_once()
+        dns.assert_not_called()
+
     def test_provider_cancellation_keeps_each_callers_fixed_category_and_never_retries(self):
         for kind, expected in (('callback', 'callback_cancelled'), ('media', 'media_cancelled'),
                                ('artifact', 'artifact_cancelled')):

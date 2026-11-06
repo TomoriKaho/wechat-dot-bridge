@@ -42,6 +42,8 @@ _cancellation = threading.Event()
 DNS_SLOTS = threading.BoundedSemaphore(4)
 DNS_TIMEOUT = 10.0
 MAX_DNS_RESPONSE = 32768
+MAX_DNS_ENTRIES = 256
+MAX_CONNECTION_CANDIDATES = 16
 
 
 def cancellation_token():
@@ -96,7 +98,7 @@ def public_ip(value):
 
 def checked_addresses(entries):
     try:
-        if not isinstance(entries, (list, tuple)) or not 0 < len(entries) <= 16:
+        if not isinstance(entries, (list, tuple)) or not 0 < len(entries) <= MAX_DNS_ENTRIES:
             raise NetworkFailure("dns_failed")
         result = []
         for family, kind, protocol, *tail in entries:
@@ -111,7 +113,10 @@ def checked_addresses(entries):
             item = (family, kind, socket.IPPROTO_TCP, address)
             if item not in result:
                 result.append(item)
-        return result
+        # CDN answers can legitimately contain more addresses than we should
+        # attempt. Validate the entire answer before bounding connection work:
+        # a private or malformed address beyond the selected prefix must fail.
+        return result[:MAX_CONNECTION_CANDIDATES]
     except NetworkFailure:
         raise
     except (ValueError, TypeError, IndexError, OverflowError):
@@ -159,7 +164,7 @@ def resolve_addresses(host, *, dns="system", proxy=None, timeout=DNS_TIMEOUT, sl
         raise NetworkFailure("dns_failed") from None
     if (not isinstance(value, dict) or type(value.get("Status")) is not int or value["Status"] != 0
             or value.get("TC") is True or not isinstance(value.get("Answer"), list)
-            or not 1 <= len(value["Answer"]) <= 16):
+            or not 1 <= len(value["Answer"]) <= MAX_DNS_ENTRIES):
         raise NetworkFailure("dns_failed")
     result = []
     for record in value["Answer"]:
@@ -179,7 +184,7 @@ def resolve_addresses(host, *, dns="system", proxy=None, timeout=DNS_TIMEOUT, sl
             result.append(entry)
     if not result:
         raise NetworkFailure("dns_failed")
-    return result
+    return checked_addresses(result)
 
 
 def _resolve_public_addresses(host, timeout, slots, token, *, deadline=None):
