@@ -394,7 +394,7 @@ class NetworkTests(unittest.TestCase):
                  b'{"Status":0,"Answer":[{"type":1,"data":"93.184.216.34"},{"type":1,"data":"10.0.0.1"}]}',
                  b'{"Status":0,"Answer":[{"type":"1","data":"93.184.216.34"}]}',
                  b'{"Status":0,"Answer":[{"type":1,"data":"2606:4700::1111"}]}',
-                 json.dumps({"Status": 0, "Answer": [{"type": 1, "data": "93.184.216.34"}] * 17}).encode()]
+                 json.dumps({"Status": 0, "Answer": [{"type": 1, "data": "93.184.216.34"}] * 257}).encode()]
         for answer in cases:
             with patch("wechat_dot_bridge.net_transport.socket.getaddrinfo") as system_dns, \
                     patch("wechat_dot_bridge.net_transport.request", return_value=NetworkResponse(200, answer, ())) as request, \

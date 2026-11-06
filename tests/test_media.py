@@ -1,6 +1,7 @@
 import base64
 import io
 import json
+import socket
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
@@ -12,6 +13,7 @@ from wechat_dot_bridge.events import Events
 from wechat_dot_bridge.media import (CDN_BASE, MAX_STAGE, MediaWorker, cdn_parts, cdn_request,
                                      crypt, descriptor, fetch, image_preview, key_bytes, upload_item)
 from wechat_dot_bridge.mcp import MCPServer
+from wechat_dot_bridge.net_transport import NetworkResponse
 from wechat_dot_bridge.store import Store
 from wechat_dot_bridge.transport import IlinkClient, WeixinWorker, _normalize_message
 
@@ -94,6 +96,30 @@ class MediaTests(unittest.TestCase):
         for secret in ["fixture-private-cdn", self.key.hex(), "fixture-private-context", "fixture-private-token"]:
             self.assertNotIn(secret, output)
         self.assertEqual(self.call("read_weixin_attachment", {"attachment_id": aid})["content"][1]["mimeType"], "image/jpeg")
+
+    def _download_with_many_public_dns_addresses(self, kind):
+        raw = b"fixture-private-original-file-bytes" * 20
+        mid = self.inbound(kind)
+        aid = self.store.attachment_metadata(mid)[0]["attachment_id"]
+        entries = [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", (f"8.8.4.{n}", 443))
+                   for n in range(1, 19)]
+        encrypted = crypt(raw, self.key)
+        with patch("wechat_dot_bridge.media.NETWORK_PROXY", None), \
+                patch("wechat_dot_bridge.media.NETWORK_DNS", "system"), \
+                patch("wechat_dot_bridge.net_transport.socket.getaddrinfo", return_value=entries), \
+                patch("wechat_dot_bridge.media.request", return_value=NetworkResponse(200, encrypted, ())) as request:
+            self.assertTrue(MediaWorker(self.store).tick())
+        request.assert_called_once()
+        self.assertEqual(len(request.call_args.args[1]), 16)
+        self.assertEqual(self.store.attachment_metadata(mid)[0]["status"], "ready")
+        self.assertEqual(self.store.read_attachment(aid)["data"], raw)
+        self.assertEqual(self.store.db.execute("SELECT attempts FROM attachments WHERE id=?", (aid,)).fetchone()[0], 1)
+
+    def test_file_download_and_decrypt_with_many_public_dns_addresses(self):
+        self._download_with_many_public_dns_addresses(4)
+
+    def test_voice_download_and_decrypt_with_many_public_dns_addresses(self):
+        self._download_with_many_public_dns_addresses(3)
 
     def test_failed_attachment_keeps_message_visible_and_reports_safe_error(self):
         mid = self.inbound()
